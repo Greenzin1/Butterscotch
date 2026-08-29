@@ -16,6 +16,16 @@
 #include "gettime.h"
 #include "wad_versions.h"
 
+#include <dlfcn.h>
+
+static void* iosGLGetProcAddress(const char* name) {
+    void* ptr = dlsym(RTLD_DEFAULT, name);
+    if (ptr) return ptr;
+    void* handle = dlopen("/System/Library/Frameworks/OpenGLES.framework/OpenGLES", RTLD_NOW | RTLD_GLOBAL);
+    if (handle) ptr = dlsym(handle, name);
+    return ptr;
+}
+
 static Runner* gRunner = nil;
 static EAGLContext* gGLContext = nil;
 static GLuint gDefaultFBO = 0;
@@ -210,6 +220,10 @@ static void teardownRunner(void) {
         [EAGLContext setCurrentContext:self.glContext];
         gGLContext = self.glContext;
         logToFile("viewDidLoad: EAGLContext created OK");
+
+        logToFile("viewDidLoad: loading GL functions via glad...");
+        int loaded = gladLoadGLES2Loader((GLADloadproc)iosGLGetProcAddress);
+        logToFile("viewDidLoad: gladLoadGLES2Loader returned %d", loaded);
 
         logToFile("viewDidLoad: glGenRenderbuffers...");
         glGenRenderbuffers(1, &gColorRenderBuffer);
