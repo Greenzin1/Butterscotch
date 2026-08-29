@@ -378,10 +378,10 @@ static void teardownRunner(void) {
 
     CGFloat bs = 60;
 
-    self.btnUp = [self makeButton:@"W" keyCode:87 size:bs];
-    self.btnDown = [self makeButton:@"S" keyCode:83 size:bs];
-    self.btnLeft = [self makeButton:@"A" keyCode:65 size:bs];
-    self.btnRight = [self makeButton:@"D" keyCode:68 size:bs];
+    self.btnUp = [self makeButton:@"▲" keyCode:38 size:bs];
+    self.btnDown = [self makeButton:@"▼" keyCode:40 size:bs];
+    self.btnLeft = [self makeButton:@"◀" keyCode:37 size:bs];
+    self.btnRight = [self makeButton:@"▶" keyCode:39 size:bs];
 
     self.btnA = [self makeButton:@"Z" keyCode:90 size:bs];
     self.btnB = [self makeButton:@"X" keyCode:88 size:bs];
