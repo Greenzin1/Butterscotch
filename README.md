@@ -60,7 +60,7 @@ Of course, there are exceptions that break game compatibility altogether:
 * Windows
 * macOS
 * Web
-* iOS
+* iOS (Applescotch)
 * PlayStation 2
 * PlayStation 3
 * PlayStation Vita
@@ -90,7 +90,7 @@ The following compilers have been tested to successfully build butterscotch, old
 
 ## Community Ports
 
-* [iOS](https://github.com/Greenzin1/Butterscotch/releases/tag/ios-v1.0) by @Greenzin1
+* [iOS (Applescotch)](https://github.com/Greenzin1/Butterscotch/releases/tag/ios-v1.9) by @Greenzin1
 * [Xbox 360 (Butterscotch-360)](https://github.com/ceilingtilefan/Butterscotch-360) by @ceilingtilefan
 * [3DS and Wii U (Cinnamon)](https://github.com/Project-Sunshine-Native/cinnamon) by @casrielasriel, @grayforz24682, @d16.dorian, @ralcactus
 
@@ -108,7 +108,7 @@ If you are using CLion, set the platform in `Settings` > `Build, Execution, Depl
 
 Then run Butterscotch with `./butterscotch /path/to/data.win`!
 
-### iOS (Cross-compiled on Linux)
+### iOS / Applescotch (Cross-compiled on Linux)
 
 Requires [L1ghtmann's LLVM toolchain](https://github.com/L1ghtmann/Theos) and iOS 16.5 SDK.
 
