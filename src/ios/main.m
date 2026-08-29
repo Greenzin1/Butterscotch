@@ -291,6 +291,13 @@ static void teardownRunner(void) {
     }
 
     logToFile("loadGame: data.win found, starting runner...");
+
+    [EAGLContext setCurrentContext:self.glContext];
+    logToFile("loadGame: GL context set");
+
+    int loaded = gladLoadGLES2Loader((GLADloadproc)iosGLGetProcAddress);
+    logToFile("loadGame: gladLoadGLES2Loader returned %d", loaded);
+
     char* path = safeStrdup([dataWinPath UTF8String]);
     char* saves = safeStrdup([[docsDir stringByAppendingPathComponent:@"saves"] UTF8String]);
 
