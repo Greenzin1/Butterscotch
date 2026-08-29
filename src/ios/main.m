@@ -24,6 +24,50 @@ static int32_t gWindowW = 0;
 static int32_t gWindowH = 0;
 static char* gCurrentDataWinPath = nil;
 static char* gSavesPath = nil;
+static FILE* gLogFile = nil;
+
+static void logToFile(const char* fmt, ...) {
+    if (!gLogFile) {
+        NSString* docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        NSString* logPath = [docs stringByAppendingPathComponent:@"butterscotch.log"];
+        gLogFile = fopen([logPath UTF8String], "a");
+    }
+    if (gLogFile) {
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(gLogFile, fmt, args);
+        va_end(args);
+        fprintf(gLogFile, "\n");
+        fflush(gLogFile);
+    }
+}
+
+#include <signal.h>
+#include <execinfo.h>
+
+static void signalHandler(int sig) {
+    logToFile("=== CRASH: signal %d ===", sig);
+    void* callstack[64];
+    int frames = backtrace(callstack, 64);
+    char** strs = backtrace_symbols(callstack, frames);
+    if (strs) {
+        for (int i = 0; i < frames; i++) {
+            logToFile("  %s", strs[i]);
+        }
+        free(strs);
+    }
+    if (gLogFile) { fclose(gLogFile); gLogFile = nil; }
+    _exit(1);
+}
+
+static void installSignalHandlers(void) {
+    signal(SIGABRT, signalHandler);
+    signal(SIGSEGV, signalHandler);
+    signal(SIGBUS, signalHandler);
+    signal(SIGFPE, signalHandler);
+    signal(SIGILL, signalHandler);
+    logToFile("Signal handlers installed");
+}
 
 void platformLog(const logType type, const char* format, va_list va) {
     NSString* prefix = @"";
@@ -35,12 +79,15 @@ void platformLog(const logType type, const char* format, va_list va) {
     }
     NSString* msg = [[NSString alloc] initWithFormat:[NSString stringWithUTF8String:format] arguments:va];
     NSLog(@"%@%@", prefix, msg);
+    logToFile("%s%s", [prefix UTF8String], [msg UTF8String]);
 }
 
 static bool startRunner(const char* dataWinPath, const char* savesPath) {
     if (gRunner != nil) return false;
+    logToFile("startRunner: path=%s saves=%s", dataWinPath, savesPath);
 
     mkdir(savesPath, 0777);
+    logToFile("startRunner: parsing data.win...");
 
     DataWin* dataWin = DataWin_parse(dataWinPath, (DataWinParserOptions){
         .parseGen8 = true, .parseOptn = true, .parseLang = true,
@@ -56,9 +103,10 @@ static bool startRunner(const char* dataWinPath, const char* savesPath) {
         .lazyLoadRooms = false, .eagerlyLoadedRooms = nil
     });
     if (!dataWin) {
-        logError("Failed to parse data.win at %s", dataWinPath);
+        logToFile("startRunner: FAILED to parse data.win!");
         return false;
     }
+    logToFile("startRunner: data.win parsed OK");
 
     char* bundleDir = nil;
     const char* lastSlash = strrchr(dataWinPath, '/');
@@ -71,24 +119,30 @@ static bool startRunner(const char* dataWinPath, const char* savesPath) {
         bundleDir = safeStrdup("./");
     }
 
+    logToFile("startRunner: creating VM...");
     VMContext* vm = VM_create(dataWin);
+    logToFile("startRunner: creating GLRenderer...");
     Renderer* renderer = GLRenderer_create();
     ((GLRenderer*)renderer)->hostFramebuffer = gDefaultFBO;
+    logToFile("startRunner: creating OverlayFileSystem...");
     OverlayFileSystem* overlayFs = OverlayFileSystem_create(bundleDir, savesPath);
     free(bundleDir);
 
+    logToFile("startRunner: creating NoopAudioSystem...");
     gRunner = Runner_create(dataWin, vm, renderer, (FileSystem*)overlayFs, (AudioSystem*)NoopAudioSystem_create(), 0);
     gRunner->osType = OS_WINDOWS;
     gRunner->getWindowSize = NULL;
+    logToFile("startRunner: Runner created");
 
     const char* gameArgs[] = { "butterscotch" };
     Runner_setGameArgs(gRunner, (char**)gameArgs, 1);
 
+    logToFile("startRunner: initFirstRoom...");
     Runner_initFirstRoom(gRunner);
 
     gCurrentDataWinPath = safeStrdup(dataWinPath);
     gSavesPath = safeStrdup(savesPath);
-    logInfo("Runner started OK");
+    logToFile("startRunner: DONE - runner started OK");
     return true;
 }
 
@@ -118,34 +172,55 @@ static void teardownRunner(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    logToFile("=== Butterscotch iOS launched ===");
     self.view.backgroundColor = [UIColor blackColor];
+    logToFile("viewDidLoad: starting GL setup");
 
-    CAEAGLLayer* eaglLayer = (CAEAGLLayer*)self.view.layer;
-    eaglLayer.opaque = YES;
-    eaglLayer.drawableProperties = @{
-        kEAGLDrawablePropertyRetainedBacking: @NO,
-        kEAGLDrawablePropertyColorFormat: kEAGLColorFormatRGBA8
-    };
+    @try {
+        CAEAGLLayer* eaglLayer = (CAEAGLLayer*)self.view.layer;
+        eaglLayer.opaque = YES;
+        eaglLayer.drawableProperties = @{
+            kEAGLDrawablePropertyRetainedBacking: @NO,
+            kEAGLDrawablePropertyColorFormat: kEAGLColorFormatRGBA8
+        };
+        logToFile("viewDidLoad: EAGLLayer configured");
 
-    self.glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
-    [EAGLContext setCurrentContext:self.glContext];
-    gGLContext = self.glContext;
+        self.glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+        if (!self.glContext) {
+            logToFile("FATAL: Failed to create EAGLContext for GLES3");
+            self.infoLabel.text = @"Error: GLES3 not supported";
+            return;
+        }
+        [EAGLContext setCurrentContext:self.glContext];
+        gGLContext = self.glContext;
+        logToFile("viewDidLoad: EAGLContext created, vendor=%s renderer=%s",
+                  glGetString(GL_VENDOR), glGetString(GL_RENDERER));
 
-    glGenRenderbuffers(1, &gColorRenderBuffer);
-    glBindRenderbuffer(GL_RENDERBUFFER, gColorRenderBuffer);
-    [self.glContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:eaglLayer];
+        glGenRenderbuffers(1, &gColorRenderBuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, gColorRenderBuffer);
+        [self.glContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:eaglLayer];
 
-    GLint bw, bh;
-    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &bw);
-    glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &bh);
-    gWindowW = bw;
-    gWindowH = bh;
+        GLint bw, bh;
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &bw);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &bh);
+        gWindowW = bw;
+        gWindowH = bh;
+        logToFile("viewDidLoad: renderbuffer %dx%d", gWindowW, gWindowH);
 
-    glGenFramebuffers(1, &gDefaultFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, gDefaultFBO);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, gColorRenderBuffer);
+        glGenFramebuffers(1, &gDefaultFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, gDefaultFBO);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, gColorRenderBuffer);
+        logToFile("viewDidLoad: FBO created, status=%d", glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
-    NSLog(@"[Butterscotch-iOS] GL framebuffer: %dx%d", gWindowW, gWindowH);
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            logToFile("WARNING: GL error after setup: 0x%x", err);
+        }
+    } @catch (NSException* e) {
+        logToFile("FATAL: Exception in viewDidLoad: %s %s",
+                  [[e name] UTF8String], [[e reason] UTF8String]);
+        return;
+    }
 
     self.infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 60, self.view.bounds.size.width - 40, 100)];
     self.infoLabel.textColor = [UIColor whiteColor];
@@ -164,28 +239,38 @@ static void teardownRunner(void) {
     self.loadButton.layer.cornerRadius = 12;
     [self.loadButton addTarget:self action:@selector(loadGame) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.loadButton];
+    logToFile("viewDidLoad: UI created OK");
 }
 
 - (void)loadGame {
+    logToFile("loadGame: starting");
     NSString* docsDir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    logToFile("loadGame: docsDir=%s", [docsDir UTF8String]);
 
     NSString* dataWinPath = [docsDir stringByAppendingPathComponent:@"data.win"];
+    logToFile("loadGame: checking %s", [dataWinPath UTF8String]);
+
     if (![[NSFileManager defaultManager] fileExistsAtPath:dataWinPath]) {
+        logToFile("loadGame: data.win NOT FOUND");
         self.infoLabel.text = @"data.win not found!\nPlace it via Files app";
         return;
     }
 
+    logToFile("loadGame: data.win found, starting runner...");
     char* path = safeStrdup([dataWinPath UTF8String]);
     char* saves = safeStrdup([[docsDir stringByAppendingPathComponent:@"saves"] UTF8String]);
 
     if (startRunner(path, saves)) {
+        logToFile("loadGame: runner started OK");
         self.gameRunning = YES;
         self.infoLabel.hidden = YES;
         self.loadButton.hidden = YES;
 
         CADisplayLink* link = [CADisplayLink displayLinkWithTarget:self selector:@selector(gameLoop:)];
         [link addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSDefaultRunLoopMode];
+        logToFile("loadGame: displayLink added");
     } else {
+        logToFile("loadGame: runner FAILED to start");
         self.infoLabel.text = @"Failed to parse data.win!";
     }
     free(path);
@@ -308,15 +393,27 @@ static void teardownRunner(void) {
 
 @implementation AppDelegate
 - (BOOL)application:(UIApplication*)application didFinishLaunchingWithOptions:(NSDictionary*)launchOptions {
+    logToFile("=== AppDelegate: didFinishLaunching ===");
+    logToFile("App version: 1.0");
+    logToFile("Screen: %.0fx%.0f @%.0fx",
+              [UIScreen mainScreen].bounds.size.width,
+              [UIScreen mainScreen].bounds.size.height,
+              [UIScreen mainScreen].scale);
+
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.window.rootViewController = [[GameViewController alloc] init];
     [self.window makeKeyAndVisible];
+    logToFile("AppDelegate: window created and visible");
     return YES;
 }
 @end
 
 int main(int argc, char* argv[]) {
     @autoreleasepool {
-        return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+        installSignalHandlers();
+        logToFile("=== main() called ===");
+        int ret = UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+        logToFile("=== main() returning %d ===", ret);
+        return ret;
     }
 }
