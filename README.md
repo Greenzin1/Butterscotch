@@ -60,6 +60,7 @@ Of course, there are exceptions that break game compatibility altogether:
 * Windows
 * macOS
 * Web
+* iOS
 * PlayStation 2
 * PlayStation 3
 * PlayStation Vita
@@ -89,10 +90,13 @@ The following compilers have been tested to successfully build butterscotch, old
 
 ## Community Ports
 
+* [iOS](https://github.com/Greenzin1/Butterscotch/releases/tag/ios-v1.0) by @Greenzin1
 * [Xbox 360 (Butterscotch-360)](https://github.com/ceilingtilefan/Butterscotch-360) by @ceilingtilefan
 * [3DS and Wii U (Cinnamon)](https://github.com/Project-Sunshine-Native/cinnamon) by @casrielasriel, @grayforz24682, @d16.dorian, @ralcactus
 
 ## Building Butterscotch
+
+### Desktop (Linux/macOS/Windows)
 
 ```bash
 mkdir build && cd build
@@ -103,6 +107,26 @@ make
 If you are using CLion, set the platform in `Settings` > `Build, Execution, Deployment` > `CMake` and add `-DBACKEND=glfw3`
 
 Then run Butterscotch with `./butterscotch /path/to/data.win`!
+
+### iOS (Cross-compiled on Linux)
+
+Requires [L1ghtmann's LLVM toolchain](https://github.com/L1ghtmann/Theos) and iOS 16.5 SDK.
+
+```bash
+CC=/tmp/theos/toolchain/iphone/bin/clang
+SDK=/tmp/theos_sdks/iPhoneOS16.5.sdk
+T="-target arm64-apple-ios16.0 -arch arm64"
+S="-isysroot $SDK"
+F="$T $S -O2 -Wno-everything -DENABLE_WAD14 -DENABLE_WAD16 -DENABLE_WAD17 -DENABLE_LEGACY_GL -DENABLE_MODERN_GL -DMA_NO_RUNTIME_LINKING"
+I="-Isrc -Isrc/gl -Isrc/gl_legacy -Isrc/gl_common -Isrc/image -Ivendor/miniaudio -Ivendor/stb/ds -Ivendor/stb/vorbis -Ivendor/stb/image -Ivendor/md5 -Ivendor/sha1 -Ivendor/base64 -Ivendor/bzip2 -Ivendor/glad/include"
+
+# Compile all .c files from src/, src/gl/, src/gl_legacy/, src/gl_common/, src/image/
+# Compile vendor deps (md5, sha1, base64, bzip2, stb_vorbis, glad)
+# Compile stb_image with -DSTB_IMAGE_IMPLEMENTATION
+# Link with -framework UIKit -framework OpenGLES -framework QuartzCore -framework Foundation
+```
+
+See `src/ios/main.m` for the iOS entry point (EAGLContext + GLES3 + touch input).
 
 ## CLI parameters
 
