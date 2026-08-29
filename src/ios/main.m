@@ -7,8 +7,9 @@
 #include "runner.h"
 #include "vm.h"
 #include "overlay_file_system.h"
-#include "al_audio_system.h"
 #include "gl/gl_renderer.h"
+
+extern void* AlAudioSystem_create(void);
 #include "runner_keyboard.h"
 #include "runner_mouse.h"
 #include "loop.h"
@@ -139,7 +140,7 @@ static bool startRunner(const char* dataWinPath, const char* savesPath) {
     free(bundleDir);
 
     logToFile("startRunner: creating AlAudioSystem...");
-    AlAudioSystem* alAudio = AlAudioSystem_create();
+    void* alAudio = AlAudioSystem_create();
     gRunner = Runner_create(dataWin, vm, renderer, (FileSystem*)overlayFs, (AudioSystem*)alAudio, 0);
     gRunner->osType = OS_WINDOWS;
     gRunner->getWindowSize = NULL;
