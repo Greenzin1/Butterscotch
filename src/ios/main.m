@@ -211,12 +211,6 @@ static void teardownRunner(void) {
         gGLContext = self.glContext;
         logToFile("viewDidLoad: EAGLContext created OK");
 
-        logToFile("viewDidLoad: GL vendor before glGetString...");
-        const char* vendor = (const char*)glGetString(GL_VENDOR);
-        logToFile("viewDidLoad: GL vendor=%s", vendor ? vendor : "NULL");
-        const char* renderer = (const char*)glGetString(GL_RENDERER);
-        logToFile("viewDidLoad: GL renderer=%s", renderer ? renderer : "NULL");
-
         logToFile("viewDidLoad: glGenRenderbuffers...");
         glGenRenderbuffers(1, &gColorRenderBuffer);
         logToFile("viewDidLoad: glBindRenderbuffer...");
