@@ -7,7 +7,7 @@
 #include "runner.h"
 #include "vm.h"
 #include "overlay_file_system.h"
-#include "noop_audio_system.h"
+#include "al_audio_system.h"
 #include "gl/gl_renderer.h"
 #include "runner_keyboard.h"
 #include "runner_mouse.h"
@@ -138,8 +138,9 @@ static bool startRunner(const char* dataWinPath, const char* savesPath) {
     OverlayFileSystem* overlayFs = OverlayFileSystem_create(bundleDir, savesPath);
     free(bundleDir);
 
-    logToFile("startRunner: creating NoopAudioSystem...");
-    gRunner = Runner_create(dataWin, vm, renderer, (FileSystem*)overlayFs, (AudioSystem*)NoopAudioSystem_create(), 0);
+    logToFile("startRunner: creating AlAudioSystem...");
+    AlAudioSystem* alAudio = AlAudioSystem_create();
+    gRunner = Runner_create(dataWin, vm, renderer, (FileSystem*)overlayFs, (AudioSystem*)alAudio, 0);
     gRunner->osType = OS_WINDOWS;
     gRunner->getWindowSize = NULL;
     logToFile("startRunner: Runner created");
