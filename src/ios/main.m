@@ -170,6 +170,10 @@ static void teardownRunner(void) {
 
 @implementation GameViewController
 
++ (Class)layerClass {
+    return [CAEAGLLayer class];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     logToFile("=== Butterscotch iOS launched ===");
