@@ -288,6 +288,9 @@ static void teardownRunner(void) {
     [EAGLContext setCurrentContext:self.glContext];
     gGLContext = self.glContext;
 
+    int loaded = gladLoadGLES2Loader((GLADloadproc)iosGLGetProcAddress);
+    logToFile("viewDidLoad: glad loaded %d", loaded);
+
     glGenRenderbuffers(1, &gColorRenderBuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, gColorRenderBuffer);
     [self.glContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:eaglLayer];
@@ -302,9 +305,6 @@ static void teardownRunner(void) {
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, gColorRenderBuffer);
 
     logToFile("viewDidLoad: GL OK %dx%d", gWindowW, gWindowH);
-
-    int loaded = gladLoadGLES2Loader((GLADloadproc)iosGLGetProcAddress);
-    logToFile("viewDidLoad: glad loaded %d", loaded);
 
     self.infoLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 60, self.view.bounds.size.width - 40, 100)];
     self.infoLabel.textColor = [UIColor whiteColor];
