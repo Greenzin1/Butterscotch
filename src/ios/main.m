@@ -199,19 +199,29 @@ static void teardownRunner(void) {
         };
         logToFile("viewDidLoad: EAGLLayer configured");
 
+        logToFile("viewDidLoad: creating EAGLContext GLES3...");
         self.glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
         if (!self.glContext) {
             logToFile("FATAL: Failed to create EAGLContext for GLES3");
             self.infoLabel.text = @"Error: GLES3 not supported";
             return;
         }
+        logToFile("viewDidLoad: setting current context...");
         [EAGLContext setCurrentContext:self.glContext];
         gGLContext = self.glContext;
-        logToFile("viewDidLoad: EAGLContext created, vendor=%s renderer=%s",
-                  glGetString(GL_VENDOR), glGetString(GL_RENDERER));
+        logToFile("viewDidLoad: EAGLContext created OK");
 
+        logToFile("viewDidLoad: GL vendor before glGetString...");
+        const char* vendor = (const char*)glGetString(GL_VENDOR);
+        logToFile("viewDidLoad: GL vendor=%s", vendor ? vendor : "NULL");
+        const char* renderer = (const char*)glGetString(GL_RENDERER);
+        logToFile("viewDidLoad: GL renderer=%s", renderer ? renderer : "NULL");
+
+        logToFile("viewDidLoad: glGenRenderbuffers...");
         glGenRenderbuffers(1, &gColorRenderBuffer);
+        logToFile("viewDidLoad: glBindRenderbuffer...");
         glBindRenderbuffer(GL_RENDERBUFFER, gColorRenderBuffer);
+        logToFile("viewDidLoad: renderbufferStorage fromDrawable...");
         [self.glContext renderbufferStorage:GL_RENDERBUFFER fromDrawable:eaglLayer];
 
         GLint bw, bh;
@@ -221,7 +231,9 @@ static void teardownRunner(void) {
         gWindowH = bh;
         logToFile("viewDidLoad: renderbuffer %dx%d", gWindowW, gWindowH);
 
+        logToFile("viewDidLoad: glGenFramebuffers...");
         glGenFramebuffers(1, &gDefaultFBO);
+        logToFile("viewDidLoad: glBindFramebuffer...");
         glBindFramebuffer(GL_FRAMEBUFFER, gDefaultFBO);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, gColorRenderBuffer);
         logToFile("viewDidLoad: FBO created, status=%d", glCheckFramebufferStatus(GL_FRAMEBUFFER));
