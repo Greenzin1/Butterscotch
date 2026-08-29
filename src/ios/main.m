@@ -160,8 +160,18 @@ static void teardownRunner(void) {
     free(gSavesPath); gSavesPath = nil;
 }
 
+@interface EAGLView : UIView
+@end
+
+@implementation EAGLView
++ (Class)layerClass {
+    return [CAEAGLLayer class];
+}
+@end
+
 @interface GameViewController : UIViewController
 @property (nonatomic, strong) EAGLContext* glContext;
+@property (nonatomic, strong) EAGLView* glView;
 @property (nonatomic, assign) BOOL gameRunning;
 @property (nonatomic, strong) UILabel* infoLabel;
 @property (nonatomic, strong) UIButton* loadButton;
@@ -170,18 +180,18 @@ static void teardownRunner(void) {
 
 @implementation GameViewController
 
-+ (Class)layerClass {
-    return [CAEAGLLayer class];
-}
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     logToFile("=== Butterscotch iOS launched ===");
-    self.view.backgroundColor = [UIColor blackColor];
     logToFile("viewDidLoad: starting GL setup");
 
     @try {
-        CAEAGLLayer* eaglLayer = (CAEAGLLayer*)self.view.layer;
+        self.glView = [[EAGLView alloc] initWithFrame:self.view.bounds];
+        self.glView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        self.glView.backgroundColor = [UIColor blackColor];
+        [self.view addSubview:self.glView];
+
+        CAEAGLLayer* eaglLayer = (CAEAGLLayer*)self.glView.layer;
         eaglLayer.opaque = YES;
         eaglLayer.drawableProperties = @{
             kEAGLDrawablePropertyRetainedBacking: @NO,
