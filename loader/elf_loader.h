@@ -14,6 +14,8 @@ typedef struct {
     char name[256];
     uint8_t* base;
     size_t size;
+    Elf64_Phdr* phdrs;
+    int phdr_count;
     Elf64_Sym* dynsym;
     const char* dynstr;
     Elf64_Rela* rela;

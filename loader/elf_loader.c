@@ -22,6 +22,8 @@ static void* lookup_symbol_table(ElfDynLibSymbol* table, const char* name) {
     return NULL;
 }
 
+static void* resolve_direct_lookup(const char* name);
+
 static void* resolve_external(const char* name) {
     void* sym;
     if ((sym = lookup_symbol_table(symtable_libc, name))) return sym;
@@ -33,6 +35,62 @@ static void* resolve_external(const char* name) {
     if ((sym = lookup_symbol_table(symtable_libz, name))) return sym;
     sym = dlsym(RTLD_DEFAULT, name);
     if (sym) return sym;
+    return resolve_direct_lookup(name);
+}
+
+typedef struct { const char* name; void* addr; } DirectSymbol;
+
+// Forward declarations from stubs
+extern int __android_log_print(int, const char*, const char*, ...);
+extern int __android_log_write(int, const char*, const char*);
+extern int __android_log_vprint(int, const char*, const char*, va_list);
+extern int __android_log_buf_print(int, int, const char*, const char*, ...);
+extern void* android_dlopen_ext(const char*, int, const void*);
+extern int* __errno_location(void);
+extern void* AAssetManager_open(void*, const char*, int);
+extern long long AAsset_getLength(void*);
+extern int AAsset_read(void*, void*, size_t);
+extern void AAsset_close(void*);
+extern int AudioTrack_getMinBufferSize(int, int, int);
+extern int AudioTrack_write(void*, const void*, int, int);
+extern int ANativeWindow_getWidth(void*);
+extern int ANativeWindow_getHeight(void*);
+extern void* ASensorManager_getInstance(void);
+extern const void* ASensorManager_getDefaultSensor(void*, int);
+extern void* ALooper_forThread(void);
+extern int ALooper_addFd(void*, int, int, int, void*, void*);
+
+static DirectSymbol direct_symbols[] = {
+    // liblog
+    { "__android_log_print",    (void*)__android_log_print },
+    { "__android_log_write",    (void*)__android_log_write },
+    { "__android_log_vprint",   (void*)__android_log_vprint },
+    { "__android_log_buf_print",(void*)__android_log_buf_print },
+    // libdl
+    { "android_dlopen_ext",     (void*)android_dlopen_ext },
+    // libc
+    { "__errno_location",       (void*)__errno_location },
+    // libandroid
+    { "AAssetManager_open",     (void*)AAssetManager_open },
+    { "AAsset_getLength",       (void*)AAsset_getLength },
+    { "AAsset_read",            (void*)AAsset_read },
+    { "AAsset_close",           (void*)AAsset_close },
+    { "AudioTrack_getMinBufferSize", (void*)AudioTrack_getMinBufferSize },
+    { "AudioTrack_write",       (void*)AudioTrack_write },
+    { "ANativeWindow_getWidth", (void*)ANativeWindow_getWidth },
+    { "ANativeWindow_getHeight",(void*)ANativeWindow_getHeight },
+    { "ASensorManager_getInstance",  (void*)ASensorManager_getInstance },
+    { "ASensorManager_getDefaultSensor", (void*)ASensorManager_getDefaultSensor },
+    { "ALooper_forThread",      (void*)ALooper_forThread },
+    { "ALooper_addFd",          (void*)ALooper_addFd },
+    { NULL, NULL }
+};
+
+static void* resolve_direct_lookup(const char* name) {
+    for (int i = 0; direct_symbols[i].name != NULL; i++) {
+        if (strcmp(direct_symbols[i].name, name) == 0)
+            return direct_symbols[i].addr;
+    }
     return NULL;
 }
 
@@ -139,7 +197,7 @@ bool elf_load_module(const char* path, ElfModule* mod) {
             ssize_t nread = read(fd, base + seg_start, phdrs[i].p_filesz);
             if (nread != (ssize_t)phdrs[i].p_filesz) {
                 fprintf(stderr, "elf_load: FAILED to read segment %d (got %zd, errno=%d)\n", i, nread, errno);
-                free(phdrs);
+    // phdrs kept in mod->phdrs for relocate phase — do not free here
                 close(fd);
                 munmap(base, aligned_size);
                 return false;
@@ -226,6 +284,8 @@ bool elf_load_module(const char* path, ElfModule* mod) {
     strncpy(mod->name, path, sizeof(mod->name) - 1);
     mod->base = base;
     mod->size = aligned_size;
+    mod->phdrs = phdrs;
+    mod->phdr_count = ehdr.e_phnum;
     mod->dynsym = dynsym;
     mod->dynstr = dynstr;
     mod->rela = rela;
@@ -249,6 +309,14 @@ bool elf_load_module(const char* path, ElfModule* mod) {
 
 bool elf_relocate_module(ElfModule* mod) {
     if (!mod->loaded || !mod->rela) return false;
+
+    // Make entire module RW so all writes during relocation work
+    size_t page_size = (size_t)getpagesize();
+    uint64_t mod_start = (uint64_t)mod->base;
+    uint64_t mod_end = mod_start + mod->size;
+    uint64_t ps = mod_start & ~(page_size - 1);
+    uint64_t pe = (mod_end + page_size - 1) & ~(page_size - 1);
+    mprotect((void*)ps, pe - ps, PROT_READ | PROT_WRITE);
 
     printf("elf_relocate: processing %zu RELA entries...\n", mod->rela_count);
 
@@ -306,6 +374,18 @@ bool elf_relocate_module(ElfModule* mod) {
                 }
             }
         }
+    }
+
+    // Restore correct permissions per segment
+    for (int i = 0; i < mod->phdr_count; i++) {
+        if (mod->phdrs[i].p_type != PT_LOAD) continue;
+        int prot = 0;
+        if (mod->phdrs[i].p_flags & PF_R) prot |= PROT_READ;
+        if (mod->phdrs[i].p_flags & PF_W) prot |= PROT_WRITE;
+        if (mod->phdrs[i].p_flags & PF_X) prot |= PROT_EXEC;
+        uint64_t seg_start = (uint64_t)(mod->base + (mod->phdrs[i].p_vaddr & ~(page_size - 1)));
+        uint64_t seg_end = (uint64_t)(mod->base + ((mod->phdrs[i].p_vaddr + mod->phdrs[i].p_memsz + page_size - 1) & ~(page_size - 1)));
+        mprotect((void*)seg_start, seg_end - seg_start, prot);
     }
 
     printf("elf_relocate: done (%d unresolved)\n", unresolved_count);
