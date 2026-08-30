@@ -240,7 +240,6 @@ bool elf_load_module(const char* path, ElfModule* mod) {
         }
     }
 
-    free(phdrs);
     close(fd);
 
     if (!dyn) {
@@ -325,6 +324,14 @@ bool elf_relocate_module(ElfModule* mod) {
         Elf64_Rela* r = &mod->rela[i];
         uint32_t type = ELF64_R_TYPE(r->r_info);
         uint32_t sym_idx = ELF64_R_SYM(r->r_info);
+
+        if (r->r_offset >= mod->size) {
+            fprintf(stderr, "elf_relocate: RELA[%zu] r_offset=0x%llx OUT OF BOUNDS\n",
+                    i, (unsigned long long)r->r_offset);
+            unresolved_count++;
+            continue;
+        }
+
         Elf64_Sym* sym = &mod->dynsym[sym_idx];
         const char* sym_name = mod->dynstr + sym->st_name;
         uint64_t* patch = (uint64_t*)(mod->base + r->r_offset);
@@ -338,7 +345,10 @@ bool elf_relocate_module(ElfModule* mod) {
             case R_AARCH64_ABS64:
             case R_AARCH64_GLOB_DAT:
             case R_AARCH64_JUMP_SLOT: {
-                void* resolved = resolve_external(sym_name);
+                void* resolved = elf_find_symbol(mod, sym_name);
+                if (!resolved) {
+                    resolved = resolve_external(sym_name);
+                }
                 if (resolved) {
                     *patch = (uint64_t)resolved;
                 } else if (ELF64_ST_BIND(sym->st_info) == 1) {
@@ -356,24 +366,44 @@ bool elf_relocate_module(ElfModule* mod) {
 
     if (mod->jmprel && mod->jmprel_count > 0) {
         printf("elf_relocate: processing %zu PLT relocations...\n", mod->jmprel_count);
+        int plt_unresolved = 0;
         for (size_t i = 0; i < mod->jmprel_count; i++) {
             Elf64_Rela* r = &mod->jmprel[i];
             uint32_t type = ELF64_R_TYPE(r->r_info);
             uint32_t sym_idx = ELF64_R_SYM(r->r_info);
+
+            // Bounds check: patch address must be within mapped region
+            if (r->r_offset >= mod->size) {
+                fprintf(stderr, "elf_relocate: PLT[%zu] r_offset=0x%llx OUT OF BOUNDS (size=0x%zx)\n",
+                        i, (unsigned long long)r->r_offset, mod->size);
+                plt_unresolved++;
+                continue;
+            }
+
             Elf64_Sym* sym = &mod->dynsym[sym_idx];
             const char* sym_name = mod->dynstr + sym->st_name;
             uint64_t* patch = (uint64_t*)(mod->base + r->r_offset);
 
             if (type == R_AARCH64_JUMP_SLOT || type == R_AARCH64_ABS64 ||
                 type == R_AARCH64_GLOB_DAT) {
-                void* resolved = resolve_external(sym_name);
+                // Try module-internal resolution first
+                void* resolved = elf_find_symbol(mod, sym_name);
+                if (!resolved) {
+                    resolved = resolve_external(sym_name);
+                }
                 if (resolved) {
                     *patch = (uint64_t)resolved;
                 } else {
-                    fprintf(stderr, "elf_relocate: UNRESOLVED PLT: %s\n", sym_name);
+                    fprintf(stderr, "elf_relocate: UNRESOLVED PLT[%zu]: %s (type=0x%x, idx=%u)\n",
+                            i, sym_name, type, sym_idx);
+                    plt_unresolved++;
                 }
+            } else {
+                fprintf(stderr, "elf_relocate: PLT[%zu] unknown type 0x%x for %s\n",
+                        i, type, sym_name);
             }
         }
+        printf("elf_relocate: PLT done (%d unresolved out of %zu)\n", plt_unresolved, mod->jmprel_count);
     }
 
     // Restore correct permissions per segment
