@@ -111,6 +111,10 @@ bool elf_load_module(const char* path, ElfModule* mod) {
     size_t page_size = (size_t)getpagesize();
     size_t aligned_size = (total_size + page_size - 1) & ~(page_size - 1);
 
+    fprintf(stderr, "elf_load: min_vaddr=0x%llx max_vaddr=0x%llx total=0x%zx aligned=0x%zx pagesize=%zu\n",
+            (unsigned long long)min_vaddr, (unsigned long long)max_vaddr,
+            total_size, aligned_size, page_size);
+
     uint8_t* base = mmap(NULL, aligned_size,
                          PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -125,10 +129,7 @@ bool elf_load_module(const char* path, ElfModule* mod) {
 
     for (int i = 0; i < ehdr.e_phnum; i++) {
         if (phdrs[i].p_type != PT_LOAD) continue;
-
         Elf64_Addr seg_start = phdrs[i].p_vaddr - min_vaddr;
-        Elf64_Addr seg_end = seg_start + phdrs[i].p_memsz;
-
         if (phdrs[i].p_filesz > 0) {
             fprintf(stderr, "elf_load: reading segment %d from file_offset=0x%llx -> mem_offset=0x%llx size=0x%llx\n",
                     i, (unsigned long long)phdrs[i].p_offset,
@@ -145,7 +146,13 @@ bool elf_load_module(const char* path, ElfModule* mod) {
             }
             fprintf(stderr, "elf_load: segment %d read OK (%zd bytes)\n", i, nread);
         }
+    }
 
+    for (int i = 0; i < ehdr.e_phnum; i++) {
+        if (phdrs[i].p_type != PT_LOAD) continue;
+
+        Elf64_Addr seg_start = phdrs[i].p_vaddr - min_vaddr;
+        Elf64_Addr seg_end = seg_start + phdrs[i].p_memsz;
         int prot = PROT_READ;
         if (phdrs[i].p_flags & PF_W) prot |= PROT_WRITE;
         if (phdrs[i].p_flags & PF_X) prot |= PROT_EXEC;
