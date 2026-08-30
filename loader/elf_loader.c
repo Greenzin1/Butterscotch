@@ -134,7 +134,8 @@ bool elf_load_module(const char* path, ElfModule* mod) {
                     i, (unsigned long long)phdrs[i].p_offset,
                     (unsigned long long)seg_start,
                     (unsigned long long)phdrs[i].p_filesz);
-            ssize_t nread = pread(fd, base + seg_start, phdrs[i].p_filesz, phdrs[i].p_offset);
+            lseek(fd, phdrs[i].p_offset, SEEK_SET);
+            ssize_t nread = read(fd, base + seg_start, phdrs[i].p_filesz);
             if (nread != (ssize_t)phdrs[i].p_filesz) {
                 fprintf(stderr, "elf_load: FAILED to read segment %d (got %zd, errno=%d)\n", i, nread, errno);
                 free(phdrs);
